@@ -424,7 +424,7 @@ g %>%
   geom_col(data = plot_data,
            aes(0,0, fill = community_simp), 
            colour = "white", alpha = 0.5) +
-  scale_fill_manual(values=comm_fills)
+  scale_fill_manual('Cluster',values=comm_fills,labels=paste('C',1:(sum(sizes(cope_community)>1)+1),sep=''))
 ggsave(filename = '../Figures/Figure 1.pdf',scale=2)
 
 ## Figure 2 ##
@@ -480,78 +480,34 @@ ggsave(filename = '../Figures/Figure 2.pdf',scale=2)
 
 
 ## Figure 3 ##
+make_labelstring <- function(mypanels) {
+  mylabels <- sapply(mypanels, 
+                     function(x) {LETTERS[which(mypanels == x)]})
+  
+  return(mylabels)
+}
+
+label_panels <- ggplot2::as_labeller(make_labelstring)
+
+
 plot_data<-group_relatedness %>%
   mutate(label=ifelse(is.na(Shoal),community,Shoal)) %>%
   group_by(s.c) %>%
   mutate(index=1:n()) %>%
   ungroup() %>%
-  mutate(s.c=factor(s.c, levels=c('Shoal','Community')))
+  mutate(s.c=factor(s.c, levels=c('Shoal','Community'))) %>%
+  mutate(label=factor(c(LETTERS[1:13],paste('C',1:(sum(sizes(cope_community)>1)),sep='')),levels=c(LETTERS[1:13],paste('C',1:(sum(sizes(cope_community)>1)),sep=''))))
 
 ggplot(plot_data,aes(x=label,y=mean.rel,ymin=mean.rel-se.rel,ymax=mean.rel+se.rel))+
   geom_blank()+
   geom_ribbon(data=plot_data,aes(x=index,ymin=0,ymax=upr),alpha=0.2)+
   geom_point()+
   geom_linerange() +
-  facet_wrap(~s.c,nrow=2,scale='free_x') +
+  facet_wrap(~s.c,nrow=2,scale='free_x',labeller = label_panels) +
   theme_classic() +
   scale_y_continuous(expression(paste("Mean Pairwise Relatedness (",bar(italic(" r")),')'))) +
-  scale_x_discrete('Shoal or Community identity')
+  scale_x_discrete('Shoal or Cluster identity')+
+  theme(strip.text = element_text(hjust = -0,size=14),
+        strip.background = element_blank())
+
 ggsave(filename = '../Figures/Figure 3.pdf',scale=2)
-
-## Figure zz ##
-cope %>%
-  group_by(Shoal,community) %>%
-  summarise(n=n()) %>%
-  ungroup() %>%
-  mutate(community=if_else(n==1,'singleton',community)) %>%
-  ggplot(aes(x=Shoal,fill=community)) + 
-  geom_bar(position='fill')
-
-cope %>% 
-  group_by(Shoal,community) %>%
-  summarise(n=n()) %>%
-  ungroup() %>%
-  mutate(community=if_else(n==1,'singleton',community)) %>%
-  group_by(Shoal,community) %>%
-  summarise(n=sum(n)) %>%
-  ggplot(aes(x=Shoal,y=community,fill=n)) + 
-  geom_bin2d()
-
-
-## Figure Supplement A ##
-plot_data<-cope.graph %>%
-  as_tbl_graph() %>%
-  mutate(community= paste('C',(cope_community %>% membership),sep='')) %>%
-  activate(edges) %>%
-  mutate(cross=crossing(cope_community,cope.graph)) %>%
-  mutate(gens_between=size.difference %/% GENERATION) %>%
-  mutate(relationship_type=if_else(gens_between==0,'Within Cohort','Intergenerational')) %>%
-  activate(nodes) %>%
-  inner_join(cope.layout,by='name')
-
-
-community_data <- plot_data %>%
-  as_tibble() %>%
-  group_by(community) %>%
-  mutate(hull=1:n(),hull=as.numeric(factor(hull, chull(x, y)))) %>%
-  arrange(hull)
-
-
-plot_data %>% 
-  ggraph(layout='manual',node.positions=cope.layout) +
-  #geom_polygon(data = filter(community_data, !is.na(hull)),aes(x=x,y=y,fill=as.factor(community),group=community), alpha = 0.3) +
-  geom_edge_link(aes(colour=cross,alpha=weight)) + 
-  geom_node_point(aes(shape=Shoal),size=2.5) +
-  facet_wrap(~relationship_type,nrow=1,dir='h') +
-  scale_shape_manual(values=LETTERS[1:13]) +
-  scale_fill_discrete('Community',na.value=NA) +
-  #scale_edge_color_discrete('Relatedness',low='gray80',high='gray20') +
-  scale_color_brewer('Generation',palette = 'Set1') +
-  guides(shape=F,fill=F)+
-  coord_fixed() +
-  theme_bw() + 
-  theme(panel.border = element_rect(colour = "black", fill=NA, size=1), 
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(), axis.line = element_blank(),
-        axis.ticks = element_blank(), axis.text = element_blank(), axis.title = element_blank())
-ggsave(filename = '../Figures/Figure S1.pdf',scale=2)
