@@ -153,6 +153,8 @@ pairwise_related <- cope %>%
 #### Make Graph ####
 cope.graph <- pairwise_related %>%
   
+  select(-pair.no) %>%
+  
   #Remove unrelated edges
   filter(trioml!=0) %>%
 
@@ -368,8 +370,6 @@ cope.graph %>%
 #### Figures ####
 ## Figure 1 ##
 #Modified from https://stackoverflow.com/questions/43984614/rggplot2geom-points-how-to-swap-points-with-pie-charts
-
-comm_fills<-c(brewer.pal(12,'Paired'),'black')
 
 comm_fills <- c(distinctColorPalette(sum(sizes(cope_community)>1)),'black')
 
