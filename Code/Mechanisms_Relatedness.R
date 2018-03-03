@@ -153,29 +153,6 @@ pairwise_related <- cope %>%
   mutate(size.difference=abs(SL.x-SL.y)) %>%
   mutate(distance=sqrt((X.x-X.y)^2+(Y.x-Y.y)^2))
 
-write_csv(pairwise_related,'C:/Users/jdsel/Documents/Coryphopterus/Mechanisms to Relatedness (Paper 2 - MS Ch. 2)/Paper/Submission Files/Relatedness_Mechanisms/Data/Relatedness_results.csv')
-
-############################ READ IN FOR TESTING NOT TO GO IN FINAL SCRIPT ##########################################################
-pairwise_related<-read_csv('C:/Users/jdsel/Documents/Coryphopterus/Mechanisms to Relatedness (Paper 2 - MS Ch. 2)/Paper/Submission Files/Relatedness_Mechanisms/Data/Relatedness_results.csv')[,-1] %>%
-  select(ind1.id,ind2.id,trioml) %>% 
-  filter(trioml!=1) %>%
-  
-  #Add in Individual A information (Shoals, Sizes, X, Y) 
-  inner_join(cope,by=c('ind1.id'='ID')) %>%
-  select(-COPE5.a:-CPER188.b) %>%
-  
-  #Add in Individual B information (Shoals, Sizes, X, Y) 
-  inner_join(cope,by=c('ind2.id'='ID')) %>%
-  select(-COPE5.a:-CPER188.b) %>%
-  
-  #Determine pairwise variables (same shoal, |size difference|, distance apart)
-  mutate(same.shoal=if_else(Shoal.x==Shoal.y,T,F)) %>%
-  mutate(same.plate=if_else(Plate.x==Plate.y,T,F)) %>%
-  mutate(size.difference=abs(SL.x-SL.y)) %>%
-  mutate(distance=sqrt((X.x-X.y)^2+(Y.x-Y.y)^2))
-
-######################################################################################################
-
 #### Make Graph ####
 cope.graph <- pairwise_related %>%
   
