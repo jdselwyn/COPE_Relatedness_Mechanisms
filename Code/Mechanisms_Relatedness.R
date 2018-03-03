@@ -1,6 +1,3 @@
-rm(list=ls())
-setwd('C:/Users/jdsel/Documents/Coryphopterus/Mechanisms to Relatedness (Paper 2 - MS Ch. 2)/Paper/Submission Files/Relatedness_Mechanisms/Data/')
-
 #### Libraries ####
 library(tidyverse)
 library(stringr)
