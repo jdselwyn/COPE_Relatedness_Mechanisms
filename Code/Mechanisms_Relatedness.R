@@ -1,3 +1,5 @@
+set.seed(12345)
+
 #### Libraries ####
 library(tidyverse)
 library(stringr)
@@ -8,6 +10,7 @@ library(pegas)
 library(HWxtest)
 library(related)
 library(purrr)
+library(broom)
 library(modelr)
 library(igraph)
 library(tidygraph)
@@ -18,19 +21,16 @@ library(adespatial)
 library(vegan)
 library(RColorBrewer)
 library(randomcoloR)
+library(Cairo)
 
 #### Functions ####
 absmax <- function(x) { x[which.max( abs(x) )]}
 
 #### Microsat Data ####
-microsats<- read_csv('../Data/Microsat.csv')  %>% #is this right
+microsats<- read_csv('../Data/Microsat.csv')  %>%
   
   #Remove Cloud 4 since it only has 3 individuals
-  filter(Cloud!="COPE-M-04") %>% 
-  
-  #Remove COPE10 and CPER 52 due to too many missing values (106/381) and (149/381)
-  select(-starts_with('COPE10')) %>%
-  select(-starts_with('CPER52'))
+  filter(Cloud!="COPE-M-04")
 
 #### Shoal Location Data ####
 shoal_locations<-read_csv('../Data/COPE clouds.csv', 
@@ -85,56 +85,99 @@ cope<-read_csv('../Data/COPE Lengths.csv') %>%
   inner_join(microsats,by=c('ID'='Sample')) %>%
   select(-Cloud.y) %>%
   rename(Shoal=Cloud.x)
-  
-  
 
 #### Observed Heterozygosity ####
 microsats <- cope %>%
   #Reformat for ADEGENET
   unite(COPE5,COPE5.a:COPE5.b,sep='/') %>%
   unite(COPE9,COPE9.a:COPE9.b,sep='/') %>%
+  unite(COPE10,COPE10.a:COPE10.b,sep='/') %>%
   unite(CPER26,CPER26.a:CPER26.b,sep='/') %>%
+  unite(CPER52,CPER52.a:CPER52.b,sep='/') %>%
   unite(CPER92,CPER92.a:CPER92.b,sep='/') %>%
   unite(CPER99,CPER99.a:CPER99.b,sep='/') %>%
   unite(CPER119,CPER119.a:CPER119.b,sep='/') %>%
   unite(CPER188,CPER188.a:CPER188.b,sep='/') %>%
-
+  
+  mutate(site='BZ14-M') %>%
   select(-SL:-Plate) %$% 
   
   #Read into ADEGENET
-  df2genind(.[,c(-1,-2)],sep='/',ind.names=ID,pop=Shoal,NA.char =NA,type='codom')
-
-cope.Ho<-lapply(seppop(microsats), function(x) summary(x)$Hobs)
-cope.Ho<-matrix(unlist(cope.Ho), ncol = 7, byrow = TRUE)
-colnames(cope.Ho)<-levels(microsats@loc.fac)
-rownames(cope.Ho)<-levels(microsats@pop)
-
-#### HWE ####
-cope.hw<-lapply(seppop(microsats), hw.test,B=10000)
-cope.hw<-matrix(p.adjust(unlist(lapply(cope.hw, function(x) x[,'Pr.exact'])),'holm'),ncol=7,byrow=T)
-colnames(cope.hw)<-levels(microsats@loc.fac)
-rownames(cope.hw)<-levels(microsats@pop)
+  df2genind(.[,c(-1,-2,-12)],sep='/',ind.names=ID,pop=site,NA.char =NA,type='codom')
 
 #### Homozygote Excess ####
+summary(microsats)$loc.n.all
+summary(microsats)$Hobs
+summary(microsats)$Hexp
+
 excess.test<-hwx.test(microsats,B=10000,statName='U',method='monte')
 excess.out<-hwdf(excess.test,statName='U',showN=T,showk=T)
-excess.out$`P-val(U)`<-p.adjust(excess.out$`P-val(U)`,'holm')
+
+#### Missing Data ####
+cope %>%
+  select(contains('.a')) %>%
+  gather(Locus,Allele) %>%
+  separate(Locus,c('Locus','Remove')) %>%
+  select(-Remove) %>%
+  group_by(Locus) %>%
+  summarise(n=n(),missing=sum(is.na(Allele)),prop_miss=missing/n)
+
+cope <- cope %>%
+  select(-contains('CPER52'),-contains('COPE10'))
+
+#### Select Relatedness Estimator ####
+sim_rel<-cope %>%
+  dplyr::select(-Shoal:-Plate) %>%
+  dplyr::select(-starts_with('COPE10'),-starts_with('CPER52')) %>%
+  readgenotypedata(.) %$%
+  familysim(freqs,500) %>%
+  coancestry(.,error.rates = 0.01,allow.inbreeding=T,
+             trioml=1,wang=1,lynchli=1,lynchrd=1,ritland=1,quellergt = 1,dyadml = 1,
+             trioml.num.reference=150, rng.seed = 12345) %$%
+  cleanuprvals(relatedness,500) %>%
+  mutate(group=if_else(group=='POPO','Parent-Offspring',
+                       if_else(group=='SBSB','Full-Sib',
+                               if_else(group=='HSHS','Half-Sib','Unrelated')))) %>%
+  mutate(group=factor(group,levels = c('Parent-Offspring','Full-Sib','Half-Sib','Unrelated'))) %>%
+  mutate(true_r=if_else(group=='Parent-Offspring' | group=='Full-Sib',0.5,
+                        if_else(group=='Half-Sib',0.25,0))) %>%
+  select(-pair.no:-ind2.id) %>%
+  gather(metric,relatedness,-group,-true_r) %>%
+  mutate(metric=if_else(metric=='dyadml','Milligan 2003',
+                        if_else(metric=='lynchli','Li et al 1993',
+                                if_else(metric=='lynchrd','Lynch and Ritland 1999',
+                                        if_else(metric=='quellergt','Queller and Goodnight 1989',
+                                                if_else(metric=='ritland','Ritland 1996',
+                                                        if_else(metric=='trioml','Wang 2007',
+                                                                if_else(metric=='wang','Wang 2002','Missed one'))))))))
+  
+# sim_rel<-read_csv('../../Results_tmp/simulated_relatedness.csv') %>%
+#   mutate(group=factor(group,levels=c('Parent-Offspring','Full-Sib','Half-Sib','Unrelated'))) %>%
+#   mutate(metric=if_else(metric=='dyadml','Milligan 2003',
+#                         if_else(metric=='lynchli','Li et al 1993',
+#                                 if_else(metric=='lynchrd','Lynch and Ritland 1999',
+#                                         if_else(metric=='quellergt','Queller and Goodnight 1989',
+#                                                 if_else(metric=='ritland','Ritland 1996',
+#                                                         if_else(metric=='trioml','Wang 2007',
+#                                                                 if_else(metric=='wang','Wang 2002','Missed one'))))))))
 
 #### Pairwise Relatedness ####
 pairwise_related <- cope %>%
   select(-Shoal:-Plate) %>%
   
-  #slice(sample(381,10)) %>% #Shrink for testing code
+  #slice(sample(381,5)) %>% #Shrink for testing code
   
   coancestry(.,error.rates = 0.01,
-             trioml=2,allow.inbreeding=T,ci95.num.bootstrap=1000,trioml.num.reference=100) %$% #Run takes ~2.5 hours with full dataset
+             dyadml=2,
+             allow.inbreeding=T,ci95.num.bootstrap=1000,
+             rng.seed = 12345)  %$% #Run takes ~2.5 hours with full dataset
   inner_join(relatedness,relatedness.ci95,by='pair.no') %>%
-  select(pair.no,ind1.id.x,ind2.id.x,trioml,trioml.low,trioml.high) %>%
+  select(pair.no,ind1.id.x,ind2.id.x,
+         dyadml,dyadml.low,dyadml.high) %>%
   rename(ind1.id=ind1.id.x, ind2.id=ind2.id.x) %>%
   
   # Set to unrelated if confidence interval includes 0
-  mutate(trioml=if_else(trioml.low==0,0,trioml)) %>%
-  filter(trioml!=1) %>%
+  mutate(dyadml=if_else(dyadml.low==0,0,dyadml)) %>%
   
   #Add in Individual A information (Shoals, Sizes, X, Y) 
   inner_join(cope,by=c('ind1.id'='ID')) %>%
@@ -148,18 +191,21 @@ pairwise_related <- cope %>%
   mutate(same.shoal=Shoal.x==Shoal.y) %>%
   mutate(same.plate=Plate.x==Plate.y) %>%
   mutate(size.difference=abs(SL.x-SL.y)) %>%
-  mutate(distance=sqrt((X.x-X.y)^2+(Y.x-Y.y)^2))
+  mutate(distance=sqrt((X.x-X.y)^2+(Y.x-Y.y)^2)) %>%
+  filter(dyadml!=1)
+
+# pairwise_related<-read_csv('../../Results_tmp/pairwise_relatedness.csv')
 
 #### Make Graph ####
 cope.graph <- pairwise_related %>%
   
-  select(-pair.no) %>%
+  select(-X1,-pair.no) %>%
   
   #Remove unrelated edges
-  filter(trioml!=0) %>%
+  filter(dyadml!=0) %>%
 
   #Set relatedness as edge weights
-  rename(weight=trioml) %>%
+  rename(weight=dyadml) %>%
   
   #Make Graph
   graph_from_data_frame(d=., vertices=cope, directed=F) %T>%
@@ -209,7 +255,11 @@ map_dbl(ER_graphs,assortativity,types1=as.factor(V(cope.graph)$Shoal))  %>%
 #### Community detection ####
 cope_community <- cope.graph %>% cluster_louvain()
 
-sizes(cope_community)
+sizes(cope_community) %>%
+  as.tibble %>%
+  ggplot(aes(x=n,..density..)) +
+    geom_histogram() +
+    theme_classic()
 
 sum(sizes(cope_community) > 1)
 
@@ -241,20 +291,20 @@ pairwise_related %<>%
 #### Shoal v Community Relatedness ####
 perm_rel<-function(x,type){
   as_tibble(x) %>%
-    select(contains(type),trioml,ind1.id,ind2.id) %>%
+    select(contains(type),dyadml,ind1.id,ind2.id) %>%
     rename_(P1 = names(.)[1], P2=names(.)[2]) %>%
     mutate(same_perm=P1==P2) %>%
     filter(same_perm==T) %>%
     group_by(P1) %>%
-    summarise(individuals=length(unique(c(ind1.id,ind2.id))),total_dyads=n(),related.dyads=sum(trioml>0),
-              mean.rel=mean(trioml),sd.rel=sd(trioml)) %>%
+    summarise(individuals=length(unique(c(ind1.id,ind2.id))),total_dyads=n(),related.dyads=sum(dyadml>0),
+              mean.rel=mean(dyadml),sd.rel=sd(dyadml)) %>%
     mutate(se.rel=sd.rel/sqrt(total_dyads)) %>%
     rename(!!type := P1)
 }
 
 full_permutation_related<-function(x,type,NPERM=1000){
   perms<-x %>%
-    modelr::permute(NPERM,trioml) %>%
+    modelr::permute(NPERM,dyadml) %>%
     group_by(.id) %>%
     do(map_df(.$perm,perm_rel,type=type)) %>%
     ungroup() %>%
@@ -283,9 +333,32 @@ group_relatedness %>%
   group_by(s.c, sig) %>%
   summarize(mean_rel=mean(mean.rel),sd_rel=sd(mean.rel),min.p=min(p),n=n())
 
+group_relatedness %>%
+  filter(s.c=='Shoal') %>%
+  dplyr::select(-full,-n,-community,-s.c) %>%
+  filter(p<0.05) %>%
+  arrange(Shoal) %>%
+  dplyr::select(Shoal,mean.rel,p)
+
 group_relatedness %>% 
   aov(mean.rel ~ s.c, data=.) %>%
   summary()
+
+group_relatedness %>%
+  filter(s.c=='Community') %>%
+  ggplot(aes(x=individuals,y=mean.rel,ymin=mean.rel-se.rel,ymax=mean.rel+se.rel)) +
+  geom_point() +
+  geom_linerange() +
+  ylab('Mean Relatedness') +
+  xlab('Community Size') +
+  theme_classic()
+
+group_relatedness %>%
+  mutate(sig=p<0.05) %>% 
+  filter(s.c=='Community',individuals > 10) %>%
+  group_by(sig) %>%
+  summarize(mean_rel=mean(mean.rel),sd_rel=sd(mean.rel),min.p=min(p),n=n())
+
 
 #### Spatial strucuring of shoals  ####
 cope %>% 
@@ -304,6 +377,8 @@ shoal_composition<-cope %>%
   right_join(shoal_locations,by=c('Shoal'='Cloud')) %>%
   select(Shoal,X,Y,starts_with('C')) %>%
   filter(!is.na(C1))
+
+shoal_order<-unique(shoal_composition$Shoal)
 
 shoal_XY <- shoal_composition %>%
   select(X,Y) %>%
@@ -341,93 +416,159 @@ anova(shoal_rda,permutations=10000)
 plot(shoal_rda)
 
 #### Cross generational relations ####
-GENERATION<-9 #Generation ~10 mm SL per Cole & Robertson 1988
+GENERATION<-9 #Generation ~9 mm SL per Cole & Robertson 1988
 
+a<-1;b<-1
 cope.graph %>%
   as_tbl_graph() %>%
   activate(edges) %>%
   mutate(gens_between=size.difference %/% GENERATION) %>%
   as_tibble() %>%
-  group_by(gens_between) %>%
-  summarise(n=n(),mean.rel=mean(weight),sd.rel=sd(weight)) %>%
-  ungroup() %>%
-  mutate(proportion_intergenerational=n/sum(n))
-
-
-cope.graph %>%
-  complementer %>%
-  as_tbl_graph() %>%
-  activate(edges) %>%
-  mutate(size.difference=abs(.N()$SL[from]-.N()$SL[to]))%>%
-  mutate(gens_between=size.difference %/% GENERATION) %>%
-  as_tibble() %>%
-  group_by(gens_between) %>%
+  bind_rows((cope.graph %>%
+              complementer %>%
+              as_tbl_graph() %>%
+              activate(edges) %>%
+              mutate(size.difference=abs(.N()$SL[from]-.N()$SL[to]))%>%
+              mutate(gens_between=size.difference %/% GENERATION) %>%
+              as_tibble()),
+            .id='Related') %>%
+  mutate(Related=if_else(Related=='1','Relatives','Unrelated')) %>%
+  group_by(Related,gens_between) %>%
   summarise(n=n()) %>%
-  ungroup() %>%
-  mutate(proportion_intergenerational=n/sum(n))
-  
+  ungroup %>%
+  group_by(Related) %>%
+  mutate(total=sum(n)) %>%
+  ungroup %>%
+  filter(gens_between==1) %>%
+  mutate(Prop_intergen=(n+a)/(total+a+b),
+         sd_prop_intergen=((a+n)*(b+total-n))/((a+b+total)^2*(a+b+total+1)),
+         PI_25=qbeta(0.25,n+a,total-n+b),
+         PI_75=qbeta(0.75,n+a,total-n+b),
+         PI_2.5=qbeta(0.025,n+a,total-n+b),
+         PI_97.5=qbeta(0.975,n+a,total-n+b)) %T>%
+  print %>%
+  ungroup %>%
+  summarise(difference=diff(Prop_intergen),
+            sd_diff=sqrt(sum(sd_prop_intergen)),
+            diff_2.5=qnorm(0.025,difference,sd_diff),
+            diff_97.5=qnorm(0.975,difference,sd_diff))
 
 #### Figures ####
 ## Figure 1 ##
 #Modified from https://stackoverflow.com/questions/43984614/rggplot2geom-points-how-to-swap-points-with-pie-charts
 
-comm_fills <- c(distinctColorPalette(sum(sizes(cope_community)>1)),'black')
+table(sizes(cope_community))
 
-plot(1:(sum(sizes(cope_community)>1)+1),1:(sum(sizes(cope_community)>1)+1),col=comm_fills,pch=16,cex=5)
+sum(sizes(cope_community)>4)
+
+comm_fills <- c(distinctColorPalette(sum(sizes(cope_community)>4)),'grey50','black')
+
+plot(1:(sum(sizes(cope_community)>4)+2),1:(sum(sizes(cope_community)>4)+2),col=comm_fills,pch=16,cex=5)
 
 g<-shoal_weights %>% 
   as(., "symmetricMatrix") %>% 
   graph.adjacency(., mode="undirected",weighted = T) 
-V(g)$Shoal<-LETTERS[1:length(unique(cope$Shoal))]
+V(g)$Shoal<-shoal_order
+cope %>% dplyr::select(Shoal) %>% distinct %$% Shoal
 
+small_comm<-str_c('C',(1:length(cope_community)),sep='')[sizes(cope_community)<10 & sizes(cope_community)!=1]
+singles<-str_c('C',(1:length(cope_community)),sep='')[sizes(cope_community)==1]
 
-singles<-paste('C',1:length(cope_community),sep='')[sizes(cope_community)==1]
 
 plot_data<-cope.graph %>%
   as_tbl_graph %>%
   mutate(community= paste('C',(cope_community %>% membership),sep='')) %>% 
-  as_tibble() %>%
   mutate(community_simp=ifelse(community %in% singles,'Singleton',community)) %>%
+  mutate(community_simp=ifelse(community %in% small_comm,'Clusters with 2-4 individuals',community_simp)) %>%
+  as_tibble() %>%
+  dplyr::select(-Plate:-CPER188.b) %>%
   group_by(Shoal,community_simp) %>%
   summarise(n=n(),x=mean(X),y=mean(Y)) %>%
   ungroup() %>%
-  #mutate(community=ifelse(n==1,'Singletons',community)) %>%
+  mutate(community_simp=as.factor(community_simp)) %>%
+  mutate(community_simp=c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton')[as.integer(community_simp)]) %>%
+  mutate(community_simp=factor(community_simp,c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton'))) %>%
   group_by(Shoal) %>%
   mutate(total=sum(n)) %>%
-  group_by(Shoal,x,y,total)
+  mutate(x_circle=if_else(Shoal=='A' | Shoal=='H',x-110,if_else(Shoal=='B' | Shoal=='E',x+110,x))) %>%
+  group_by(Shoal,x,y,total,x_circle)
 
 
-names(comm_fills)<-sort(unique(plot_data$community_simp))
-df.grobs <- plot_data %>% 
-  do(subplots = ggplot(., aes(1, n, fill = community_simp)) + 
+names(comm_fills)<-c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton')
+pie.grobs <- plot_data %>% 
+  do(pies = ggplot(., aes(1, n, fill = community_simp)) + 
        geom_col(position = "fill", alpha = 0.5, colour = NA) + 
        scale_fill_manual(values=comm_fills) + 
        coord_polar(theta = "y") + 
-       theme_void() + guides(fill = F))  %>%
-  mutate(subgrobs = list(annotation_custom(ggplotGrob(subplots),
-                                           xmin = x-100, ymin = y-100,
-                                           xmax = x+100, ymax = y+100)))
+       theme_void()+ guides(fill = F))  %>%
+  mutate(pie_grobs = list(annotation_custom(ggplotGrob(pies),
+                                           xmin = x_circle-100, ymin = y-100,
+                                           xmax = x_circle+100, ymax = y+100)))
+back.grobs <- plot_data %>% 
+  do(backs = ggplot(., aes(1, n)) + 
+       geom_col(fill='white',position = "fill", alpha = 1, colour = NA) + 
+       scale_fill_manual(values=comm_fills) + 
+       coord_polar(theta = "y") + 
+       theme_void()+ guides(fill = F))  %>%
+  mutate(back_grobs = list(annotation_custom(ggplotGrob(backs),
+                                            xmin = x_circle-100, ymin = y-100,
+                                            xmax = x_circle+100, ymax = y+100))) %>%
+  dplyr::select(Shoal,back_grobs)
 
-df.grobs$subplots[[3]]
-
-g %>% 
+fig1<-g %>% 
   as_tbl_graph %>%
-  inner_join(df.grobs,by='Shoal') %>%
-  ggraph(layout='manual',node.positions=(shoal_XY %>% as_tibble %>% rename(x=X,y=Y))) +
+  inner_join(pie.grobs,by=c('Shoal')) %>%
+  inner_join(back.grobs,by=c('Shoal')) %>%
+  mutate(x_label=if_else(Shoal=='D' | Shoal=='J' | Shoal=='C' | Shoal=='A' | Shoal=='H' | Shoal=='K',
+                         x_circle-125,x_circle+125)) %>%
+  
+  ggraph(layout='manual',node.positions=(as.tibble(.) %>% dplyr::select(.,x,y))) +
   geom_edge_link() +
-  scale_x_continuous('X (cm)',expand = c(0.25, 0)) +
-  scale_y_continuous('Y (cm)',expand = c(0.25, 0)) +
+  scale_x_continuous('X (cm)') +
+  scale_y_continuous('Y (cm)') +
   coord_fixed ()+
   theme_classic() +
-  df.grobs$subgrobs +
-  geom_node_text(aes(label = Shoal)) + 
+  geom_node_point(size=3) +
+  back.grobs$back_grobs +
+  pie.grobs$pie_grobs +
+  geom_node_text(aes(x=x_label,y=y,label = Shoal)) + 
   geom_col(data = plot_data,
            aes(0,0, fill = community_simp), 
            colour = "white", alpha = 0.5) +
-  scale_fill_manual('Cluster',values=comm_fills,labels=paste('C',1:(sum(sizes(cope_community)>1)+1),sep=''))
-ggsave(filename = '../Figures/Figure 1.pdf',scale=2)
+  scale_fill_manual('Cluster',values=comm_fills) +
+  theme(legend.position = 'bottom')
+ggsave(filename = '../Figures/Figure 1.eps',plot = print(fig1),scale=1.5,height = 6,width = 4,device = cairo_ps,dpi = 300)
 
-## Figure 2 ##
+## Figure 2 & Table 2 ##
+sim_rel %>%
+  group_by(metric,group) %>% 
+  mutate(M=mean(relatedness),S=sd(relatedness),CV=S/M) %>%
+  ungroup %>%
+  group_by(metric) %>%
+  mutate(mean_cv=mean(CV),w=cor(true_r,relatedness)) %>%
+  select(metric,mean_cv,w,group,M,S,CV) %>%
+  distinct() %>%
+  arrange(-w) %>%
+  write_csv('../Figures/Table 2.csv')
+
+fig2<-sim_rel %>%
+  group_by(metric,group) %>%
+  summarise(mean_r=mean(relatedness),median_r=median(relatedness),
+            sd_r=sd(relatedness),lwr_r=quantile(relatedness,0.25),upr_r=quantile(relatedness,0.75),
+            true_r2=mean(true_r)) %>%
+  
+  ggplot(aes(x=group,y=median_r,ymin=lwr_r,ymax=upr_r,colour=metric)) +
+  geom_errorbar(aes(ymax=true_r2,ymin=true_r2), colour='black', lty=2) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(position = position_dodge(width = 0.5),width=0) +
+  coord_cartesian(ylim = c(0, 1)) +
+  xlab('True relationship') +
+  ylab('Simulated Relatedness') +
+  scale_color_discrete('Relatedness Estimator') +
+  theme_classic()
+ggsave(filename = '../Figures/Figure 2.eps',plot = print(fig2),scale=1.5,height=4,width = 4,device = cairo_ps,dpi = 300)
+
+## Figure 3 ##
 cope.layout<-cope.graph %>%
   as_tbl_graph() %>%
   activate(edges) %>%
@@ -439,7 +580,13 @@ cope.layout<-cope.graph %>%
 
 plot_data<-cope.graph %>%
   as_tbl_graph() %>%
+  dplyr::select(-Plate:-CPER188.b) %>%
   mutate(community= paste('C',(cope_community %>% membership),sep='')) %>%
+  mutate(community=ifelse(community %in% singles,'Singleton',community)) %>%
+  mutate(community=ifelse(community %in% small_comm,'Little family',community)) %>%
+  mutate(community=as.factor(community)) %>%
+  mutate(community=c(str_c('C',1:13,sep=''),'Small Family','Singleton')[as.integer(community)]) %>%
+  mutate(community=factor(community,c(str_c('C',1:13,sep=''),'Small Family','Singleton'))) %>%
   activate(edges) %>%
   mutate(cross=crossing(cope_community,cope.graph)) %>%
   mutate(gens_between=size.difference %/% GENERATION) %>%
@@ -451,7 +598,8 @@ plot_data<-cope.graph %>%
 
 
 community_data <- plot_data %>%
-  as_tibble() %>%
+  as_tibble() %>% 
+  filter(community!='Small Family', community!='Singleton') %>%
   group_by(community) %>%
   mutate(hull=1:n(),hull=as.numeric(factor(hull, chull(x, y)))) %>%
   arrange(hull) %>%
@@ -460,14 +608,21 @@ community_data <- plot_data %>%
   filter(polygon_type>1)
   
 
-plot_data %>% 
+dat_text <- data.frame(
+  label = c("A", "B"),
+  relationship_type   = c('Within Cohort', 'Intergenerational')
+)
+
+fig3<-plot_data %>% 
   ggraph(layout='manual',node.positions=cope.layout) +
   geom_polygon(data = community_data,aes(x=x,y=y,fill=community,group=community), alpha = 0.5) +
+  #geom_edge_link(aes(colour=relationship_type,alpha=weight)) + 
   geom_edge_link(aes(colour=weight)) + 
   geom_node_text(aes(label=Shoal),size=3) +
+  geom_text(data=dat_text, aes(x = -Inf, y = Inf, label = label), size=10, hjust = -0.2, vjust=1.2) +
   facet_wrap(~relationship_type,nrow=1,dir='h') +
-  #scale_fill_discrete('Community',na.value=NA) +
   scale_fill_manual(values=comm_fills) + 
+  #scale_edge_alpha_continuous(range=c(0.4,1)) +
   scale_edge_color_continuous('Relatedness',low='gray80',high='gray20') +
   guides(shape=F,fill=F)+
   coord_fixed() +
@@ -475,39 +630,51 @@ plot_data %>%
   theme(panel.border = element_rect(colour = "black", fill=NA, size=1), 
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(), axis.line = element_blank(),
-        axis.ticks = element_blank(), axis.text = element_blank(), axis.title = element_blank())
-ggsave(filename = '../Figures/Figure 2.pdf',scale=2)
+        axis.ticks = element_blank(), axis.text = element_blank(), axis.title = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank())
+ggsave(filename = '../Figures/Figure 3.eps',plot = print(fig3),scale=1.5,height=4,width = 8,device = cairo_ps,dpi = 300)
 
-
-## Figure 3 ##
-make_labelstring <- function(mypanels) {
-  mylabels <- sapply(mypanels, 
-                     function(x) {LETTERS[which(mypanels == x)]})
-  
-  return(mylabels)
-}
-
-label_panels <- ggplot2::as_labeller(make_labelstring)
-
+## Figure 4 ##
+dat_text <- data.frame(
+  name = c("A", "B"),
+  s.c   = c('Shoal', 'Community'),
+  mean.rel = Inf,
+  se.rel=NA,
+  label=-Inf
+)
 
 plot_data<-group_relatedness %>%
-  mutate(label=ifelse(is.na(Shoal),community,Shoal)) %>%
   group_by(s.c) %>%
   mutate(index=1:n()) %>%
   ungroup() %>%
-  mutate(s.c=factor(s.c, levels=c('Shoal','Community'))) %>%
-  mutate(label=factor(c(LETTERS[1:13],paste('C',1:(sum(sizes(cope_community)>1)),sep='')),levels=c(LETTERS[1:13],paste('C',1:(sum(sizes(cope_community)>1)),sep=''))))
+  mutate(s.c=factor(s.c, levels=c('Shoal','Community'))) %>% 
+  filter((individuals > 10 & s.c=='Community') | s.c=='Shoal') %>%
+  mutate(community=as.factor(community)) %>%
+  mutate(community=str_c('C',1:length(unique(.$community)),sep='')[as.integer(community)]) %>%
+  mutate(community=factor(community,str_c('C',1:length(unique(.$community)),sep=''))) %>%
+  mutate(label=ifelse(is.na(Shoal),as.character(community),Shoal)) %>%
+  mutate(label=factor(label,
+                      levels=c(LETTERS[1:13],str_c('C',1:length(unique(.$community)),sep=''))))
+  
 
-ggplot(plot_data,aes(x=label,y=mean.rel,ymin=mean.rel-se.rel,ymax=mean.rel+se.rel))+
-  geom_blank()+
-  geom_ribbon(data=plot_data,aes(x=index,ymin=0,ymax=upr),alpha=0.2)+
-  geom_point()+
-  geom_linerange() +
-  facet_wrap(~s.c,nrow=2,scale='free_x',labeller = label_panels) +
+distributions<-plot_data %>%
+  select(label,s.c,full) %>%
+  unnest() %>%
+  rename(mean.rel=full)
+
+
+fig4<-ggplot(plot_data,aes(x=label,y=mean.rel))+
+  #geom_blank()+
+  #geom_ribbon(data=plot_data,aes(x=index,ymin=0,ymax=upr),alpha=0.2)+
+  geom_violin(data=distributions)+#,draw_quantiles = c(0.025,0.975)) +
+  geom_point() +
+  geom_linerange(aes(ymin=mean.rel-se.rel,ymax=mean.rel+se.rel)) +
+  geom_text(data=dat_text, aes(x = -Inf, y = Inf, label = name), size=10, hjust = -0.5, vjust=1.2) +
+  facet_wrap(~s.c,nrow=2,scale='free_x') +
   theme_classic() +
   scale_y_continuous(expression(paste("Mean Pairwise Relatedness (",bar(italic(" r")),')'))) +
   scale_x_discrete('Shoal or Cluster identity')+
-  theme(strip.text = element_text(hjust = -0,size=14),
+  theme(strip.text = element_blank(),
         strip.background = element_blank())
-
-ggsave(filename = '../Figures/Figure 3.pdf',scale=2)
+ggsave(filename = '../Figures/Figure 4.eps',plot = print(fig4),scale=1.5,height=4,width = 4,device = cairo_ps,dpi = 300)
