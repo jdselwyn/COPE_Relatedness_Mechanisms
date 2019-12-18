@@ -125,6 +125,17 @@ cope %>%
 cope <- cope %>%
   select(-contains('CPER52'),-contains('COPE10'))
 
+marker_check<-cope %>%
+  dplyr::select(ID, COPE5.a:CPER188.b) %>% 
+  mutate(COPE5 = !is.na(COPE5.a),
+         COPE9 = !is.na(COPE9.a),
+         CPER26 = !is.na(CPER26.a),
+         CPER92 = !is.na(CPER92.a),
+         CPER99 = !is.na(CPER99.a),
+         CPER119 = !is.na(CPER119.a),
+         CPER188 = !is.na(CPER188.a)) %>%
+  dplyr::select(-COPE5.a:-CPER188.b)
+
 #### Select Relatedness Estimator ####
 sim_rel<-cope %>%
   dplyr::select(-Shoal:-Plate) %>%
@@ -161,6 +172,11 @@ sim_rel<-cope %>%
 #                                                         if_else(metric=='trioml','Wang 2007',
 #                                                                 if_else(metric=='wang','Wang 2002','Missed one'))))))))
 
+max_unrel <- sim_rel %>%
+  filter(group == 'Unrelated',
+         metric == 'Milligan 2003') %$%
+  quantile(relatedness, 0.975)
+
 #### Pairwise Relatedness ####
 pairwise_related <- cope %>%
   select(-Shoal:-Plate) %>%
@@ -192,7 +208,19 @@ pairwise_related <- cope %>%
   mutate(same.plate=Plate.x==Plate.y) %>%
   mutate(size.difference=abs(SL.x-SL.y)) %>%
   mutate(distance=sqrt((X.x-X.y)^2+(Y.x-Y.y)^2)) %>%
-  filter(dyadml!=1)
+  filter(dyadml!=1) %>%
+  inner_join(marker_check, by = c('ind1.id'='ID')) %>%
+  inner_join(marker_check, by = c('ind2.id'='ID'), suffix = c('.1','.2')) %>%
+  mutate(COPE5 = COPE5.1 == COPE5.2,
+         COPE9 = COPE9.1 == COPE9.2,
+         CPER26 = CPER26.1 == CPER26.2,
+         CPER92 = CPER92.1 == CPER92.2,
+         CPER99 = CPER99.1 == CPER99.2,
+         CPER119 = CPER119.1 == CPER119.2,
+         CPER188 = CPER188.1 == CPER188.2) %>%
+  dplyr::select(-COPE5.1:-CPER188.2) %>%
+  mutate(number_match = COPE5 + COPE9 + CPER26 + CPER92 + CPER99 + CPER119 + CPER188) %>%
+  dplyr::select(-COPE5:-CPER188)
 
 # pairwise_related<-read_csv('../../Results_tmp/pairwise_relatedness.csv')
 
@@ -228,6 +256,11 @@ BOOT<-1000
 ER_graphs<-replicate(BOOT,play_erdos_renyi(n=vcount(cope.graph),p=ecount(cope.graph)/choose(vcount(cope.graph),2),directed=F),simplify = F) %>%
   map(.,set_vertex_attr,name='Shoal',value=V(cope.graph)$Shoal)
 
+par(mfrow=c(3,3))
+for(i in sample(1000, 9)){
+  plot(ER_graphs[[i]],vertex.label=NA,vertex.size=2)
+}
+par(mfrow=c(1,1))
 
 #### Transitivity ####
 transitivity(cope.graph)
@@ -256,7 +289,7 @@ map_dbl(ER_graphs,assortativity,types1=as.factor(V(cope.graph)$Shoal))  %>%
 cope_community <- cope.graph %>% cluster_louvain()
 
 sizes(cope_community) %>%
-  as.tibble %>%
+  as_tibble %>%
   ggplot(aes(x=n,..density..)) +
     geom_histogram() +
     theme_classic()
@@ -459,11 +492,11 @@ cope.graph %>%
 
 table(sizes(cope_community))
 
-sum(sizes(cope_community)>4)
+number_bigger_fams<-sum(sizes(cope_community)>2)
 
-comm_fills <- c(distinctColorPalette(sum(sizes(cope_community)>4)),'grey50','black')
+comm_fills <- c(distinctColorPalette(number_bigger_fams, runTsne=TRUE),'grey50','black')
 
-plot(1:(sum(sizes(cope_community)>4)+2),1:(sum(sizes(cope_community)>4)+2),col=comm_fills,pch=16,cex=5)
+plot(1:(number_bigger_fams+2),1:(number_bigger_fams+2),col=comm_fills,pch=16,cex=5)
 
 g<-shoal_weights %>% 
   as(., "symmetricMatrix") %>% 
@@ -471,9 +504,11 @@ g<-shoal_weights %>%
 V(g)$Shoal<-shoal_order
 cope %>% dplyr::select(Shoal) %>% distinct %$% Shoal
 
-small_comm<-str_c('C',(1:length(cope_community)),sep='')[sizes(cope_community)<10 & sizes(cope_community)!=1]
+small_comm<-str_c('C',(1:length(cope_community)),sep='')[sizes(cope_community)<=2 & sizes(cope_community)!=1]
 singles<-str_c('C',(1:length(cope_community)),sep='')[sizes(cope_community)==1]
 
+
+table((cope_community %>% membership))[table((cope_community %>% membership))>4]
 
 plot_data<-cope.graph %>%
   as_tbl_graph %>%
@@ -486,15 +521,15 @@ plot_data<-cope.graph %>%
   summarise(n=n(),x=mean(X),y=mean(Y)) %>%
   ungroup() %>%
   mutate(community_simp=as.factor(community_simp)) %>%
-  mutate(community_simp=c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton')[as.integer(community_simp)]) %>%
-  mutate(community_simp=factor(community_simp,c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton'))) %>%
+  mutate(community_simp=c(str_c('C',1:number_bigger_fams,sep=''),'Clusters with 2-4 individuals','Singleton')[as.integer(community_simp)]) %>%
+  mutate(community_simp=factor(community_simp,c(str_c('C',1:number_bigger_fams,sep=''),'Clusters with 2-4 individuals','Singleton'))) %>%
   group_by(Shoal) %>%
   mutate(total=sum(n)) %>%
   mutate(x_circle=if_else(Shoal=='A' | Shoal=='H',x-110,if_else(Shoal=='B' | Shoal=='E',x+110,x))) %>%
   group_by(Shoal,x,y,total,x_circle)
 
 
-names(comm_fills)<-c(str_c('C',1:13,sep=''),'Clusters with 2-4 individuals','Singleton')
+names(comm_fills)<-c(str_c('C',1:number_bigger_fams,sep=''),'Clusters with 2-4 individuals','Singleton')
 pie.grobs <- plot_data %>% 
   do(pies = ggplot(., aes(1, n, fill = community_simp)) + 
        geom_col(position = "fill", alpha = 0.5, colour = NA) + 
@@ -515,14 +550,19 @@ back.grobs <- plot_data %>%
                                             xmax = x_circle+100, ymax = y+100))) %>%
   dplyr::select(Shoal,back_grobs)
 
-fig1<-g %>% 
+tmp1<-g %>% 
   as_tbl_graph %>%
   inner_join(pie.grobs,by=c('Shoal')) %>%
   inner_join(back.grobs,by=c('Shoal')) %>%
   mutate(x_label=if_else(Shoal=='D' | Shoal=='J' | Shoal=='C' | Shoal=='A' | Shoal=='H' | Shoal=='K',
-                         x_circle-125,x_circle+125)) %>%
-  
-  ggraph(layout='manual',node.positions=(as.tibble(.) %>% dplyr::select(.,x,y))) +
+                         x_circle-125,x_circle+125))
+
+tmp_layout<-tmp1 %>%
+  as_tibble() %>%
+  dplyr::select(x,y)
+
+fig1<-tmp1 %>%
+  ggraph(layout='manual', x=tmp_layout$x, y= tmp_layout$y) +
   geom_edge_link() +
   scale_x_continuous('X (cm)') +
   scale_y_continuous('Y (cm)') +
@@ -585,14 +625,14 @@ plot_data<-cope.graph %>%
   mutate(community=ifelse(community %in% singles,'Singleton',community)) %>%
   mutate(community=ifelse(community %in% small_comm,'Little family',community)) %>%
   mutate(community=as.factor(community)) %>%
-  mutate(community=c(str_c('C',1:13,sep=''),'Small Family','Singleton')[as.integer(community)]) %>%
-  mutate(community=factor(community,c(str_c('C',1:13,sep=''),'Small Family','Singleton'))) %>%
+  mutate(community=c(str_c('C',1:number_bigger_fams,sep=''),'Small Family','Singleton')[as.integer(community)]) %>%
+  mutate(community=factor(community,c(str_c('C',1:number_bigger_fams,sep=''),'Small Family','Singleton'))) %>%
   activate(edges) %>%
   mutate(cross=crossing(cope_community,cope.graph)) %>%
   mutate(gens_between=size.difference %/% GENERATION) %>%
   mutate(relationship_type=if_else(gens_between==0,'Within Cohort','Intergenerational')) %>%
   mutate(relationship_type = factor(relationship_type,levels=c('Within Cohort','Intergenerational'))) %>%
-  filter(!cross) %>%
+  #filter(!cross) %>%
   activate(nodes) %>%
   inner_join(cope.layout,by='name')
 
@@ -614,10 +654,10 @@ dat_text <- data.frame(
 )
 
 fig3<-plot_data %>% 
-  ggraph(layout='manual',node.positions=cope.layout) +
+  ggraph(layout='manual', x=cope.layout$x, y=cope.layout$y) +
   geom_polygon(data = community_data,aes(x=x,y=y,fill=community,group=community), alpha = 0.5) +
   #geom_edge_link(aes(colour=relationship_type,alpha=weight)) + 
-  geom_edge_link(aes(colour=weight)) + 
+  geom_edge_link(aes(colour=weight)) + #
   geom_node_text(aes(label=Shoal),size=3) +
   geom_text(data=dat_text, aes(x = -Inf, y = Inf, label = label), size=10, hjust = -0.2, vjust=1.2) +
   facet_wrap(~relationship_type,nrow=1,dir='h') +
@@ -626,7 +666,7 @@ fig3<-plot_data %>%
   scale_edge_color_continuous('Relatedness',low='gray80',high='gray20') +
   guides(shape=F,fill=F)+
   coord_fixed() +
-  theme_bw() + 
+  theme_classic() + 
   theme(panel.border = element_rect(colour = "black", fill=NA, size=1), 
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(), axis.line = element_blank(),

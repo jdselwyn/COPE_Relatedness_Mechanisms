@@ -1,21 +1,44 @@
-Date,Site,Bag #,Tube #,Node/Cloud,Distance to Node (cm),Angle from Node,Distance to CN (m),Angle from CN,Nearest Node,# COPE
-08-Aug-14,COPE-M,5,COPE-M-01,Central Node,,,,,Central Node,31
-08-Aug-14,COPE-M,3,COPE-M-03,Cloud,87,63,,,Central Node,19
-08-Aug-14,COPE-M,2,COPE-M-06,Cloud,120,160,,,Central Node,73
-08-Aug-14,COPE-M,1,COPE-M-04,Cloud,182,302,,,Central Node,4
-08-Aug-14,COPE-M,6,COPE-M-02,Cloud,212,340,,,Central Node,60
-08-Aug-14,COPE-M,8,COPE-M-05,Cloud,231,25,,,Central Node,35
-08-Aug-14,COPE-M,6,COPE-M-14,5N1,,,5.9,310,5N1,30
-08-Aug-14,COPE-M,8,COPE-M-08,Cloud,330,345,,,5N1,31
-08-Aug-14,COPE-M,1,COPE-M-07,5N2,,,5.5,63,5N2,69
-08-Aug-14,COPE-M,5,COPE-M-10,Cloud,170,60,,,5N2,30
-08-Aug-14,COPE-M,4,COPE-M-09,5N3,,,6.2,150,5N3,40
-08-Aug-14,COPE-M,7,COPE-M-12,Cloud,80,240,,,5N3,29
-08-Aug-14,COPE-M,10,COPE-M-17,Cloud,120,180,,,5N3,48
-08-Aug-14,COPE-M,3,COPE-M-11,Cloud,250,2,,,5N3,19
-08-Aug-14,COPE-M,7,COPE-M-15,10N1,,,10.7,200,10N1,10
-08-Aug-14,COPE-M,1,COPE-M-16,Cloud,280,170,,,10N1,87
-08-Aug-14,COPE-M,8,COPE-M-19,10N2,,,10.8,159,10N2,26
-08-Aug-14,COPE-M,6,COPE-M-13,Cloud,180,250,,,10N2,71
-08-Aug-14,COPE-M,2,COPE-M-20,10N3,,,10.2,339,10N3,29
-08-Aug-14,COPE-M,9,COPE-M-18,Cloud,410,35,,,10N3,10
+Date,Site,Bag #,Tube #,Node/Cloud,Distance to Node (cm),Angle from Node,Distance to CN (m),Angle from CN,Nearest Node,# COPE,Notes
+08-Aug-14,COPE-M,5,COPE-M-1,Central Node,,,,,Central Node,31,
+08-Aug-14,COPE-M,3,COPE-M-3,Cloud,87,63,,,Central Node,19,
+08-Aug-14,COPE-M,2,COPE-M-6,Cloud,120,160,,,Central Node,73,
+08-Aug-14,COPE-M,1,COPE-M-4,Cloud,182,302,,,Central Node,4,
+08-Aug-14,COPE-M,6,COPE-M-2,Cloud,212,340,,,Central Node,60,
+08-Aug-14,COPE-M,8,COPE-M-5,Cloud,231,25,,,Central Node,35,
+08-Aug-14,COPE-M,6,COPE-M-14,5N1,,,5.9,310,5N1,30,
+08-Aug-14,COPE-M,8,COPE-M-8,Cloud,330,345,,,5N1,31,
+08-Aug-14,COPE-M,1,COPE-M-7,5N2,,,5.5,63,5N2,69,
+08-Aug-14,COPE-M,5,COPE-M-10,Cloud,170,60,,,5N2,30,
+08-Aug-14,COPE-M,4,COPE-M-9,5N3,,,6.2,150,5N3,40,
+08-Aug-14,COPE-M,7,COPE-M-12,Cloud,80,240,,,5N3,29,
+08-Aug-14,COPE-M,10,COPE-M-17,Cloud,120,180,,,5N3,48, 
+08-Aug-14,COPE-M,3,COPE-M-11,Cloud,250,2,,,5N3,19,
+08-Aug-14,COPE-M,7,COPE-M-15,10N1,,,10.7,200,10N1,10,
+08-Aug-14,COPE-M,1,COPE-M-16,Cloud,280,170,,,10N1,87,
+08-Aug-14,COPE-M,8,COPE-M-19,10N2,,,10.8,159,10N2,26,
+08-Aug-14,COPE-M,6,COPE-M-13,Cloud,180,250,,,10N2,71,
+08-Aug-14,COPE-M,2,COPE-M-20,10N3,,,10.2,339,10N3,29,*Possibly two groups
+08-Aug-14,COPE-M,9,COPE-M-18,Cloud,410,35,,,10N3,10,*Bag was left on site by accident for 1 dive
+14-Aug-14,COPE-N,1,COPE-N-3,Central Node,,,,,Central Node,56,
+14-Aug-14,COPE-N,16,COPE-N-5,Cloud,106,160,,,Central Node,91,
+14-Aug-14,COPE-N,14,COPE-N-1,Cloud,144,340,,,Central Node,75,
+14-Aug-14,COPE-N,15,COPE-N-15,Cloud,180,30,,,Central Node,43,
+14-Aug-14,COPE-N,9,COPE-N-4,Cloud,190,105,,,Central Node,93,
+14-Aug-14,COPE-N,17,COPE-N-12,Cloud,170,175,,,Central Node,18,
+14-Aug-14,COPE-N,8,COPE-N-13,Cloud,220,180,,,Central Node,14,
+14-Aug-14,COPE-N,10,COPE-N-2,Cloud,330,190,,,Central Node,52,
+14-Aug-14,COPE-N,13,COPE-N-11,5N1,,,5.7,90,5N1,25,
+14-Aug-14,COPE-N,7,COPE-N-10,Cloud,240,135,,,5N1,131,
+14-Aug-14,COPE-N,4,COPE-N-6,Cloud,270,95,,,5N1,122,
+14-Aug-14,COPE-N,5,COPE-N-14,5N2,,,3.2,320,5N2,35,
+14-Aug-14,COPE-N,6,COPE-N-7,Cloud,90,280,,,5N2,32,
+14-Aug-14,COPE-N,2,COPE-N-9,Cloud,210,50,,,5N2,14,
+14-Aug-14,COPE-N,3,COPE-N-16,5N3,,,4.4,160,5N3,116,
+14-Aug-14,COPE-N,12,COPE-N-8,Cloud,150,220,,,5N3,18,
+15-Aug-04,COPE-N,11,COPE-N-19,10N1,,,13.9,120,10N1,98,
+15-Aug-04,COPE-N,18,COPE-N-17,Cloud,120,105,,,10N1,122,
+15-Aug-04,COPE-N,6,COPE-N-23,Cloud,160,10,,,10N1,92,
+15-Aug-04,COPE-N,15,COPE-N-22,10N2,,,11.2,70,10N2,119,
+15-Aug-04,COPE-N,12,COPE-N-21,Cloud,80,100,,,10N2,62,
+15-Aug-04,COPE-N,17,COPE-N-20,10N3,,,15.8,345,10N3,100,
+15-Aug-04,COPE-N,13,COPE-N-18,Cloud,250,200,,,10N3,84,
