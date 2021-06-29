@@ -93,6 +93,19 @@ cope_data <- unlist(str_split('cdcccccccnnnciiiccclcccccicccc','')) %>%
   mutate(cloud = str_replace(cloud, '-0','-'))
 
 #### Read in post-Sequencher fasta files ####
+get_consensus <- function(x){
+  if(nrow(x) == 1){
+    x$sequence
+  } else {
+    x$sequence %>%
+      str_replace_all("-", ' ') %>%
+      str_trim() %>%
+      str_replace_all(" ",'-') %>%
+      msa(type='dna', verbose = TRUE, order = 'input') %>%
+      consensusString()
+  }
+}
+
 post_sequencher_fasta <- read.fasta('../Data/Coryphopterus_07.12.19.TXT', as.string = TRUE) %>%
   unlist %>%
   enframe() %>%
@@ -108,6 +121,67 @@ post_sequencher_fasta <- read.fasta('../Data/Coryphopterus_07.12.19.TXT', as.str
   mutate(sequence = str_to_upper(sequence)) %>%
   group_by(ID, sequence) %>%
   summarise()
+
+post_sequencher_fasta_v2 <- read.fasta('../Data/08.05.19_newseq.TXT', as.string = TRUE) %>%
+  unlist %>%
+  enframe() %>%
+  dplyr::rename(sequence = value) %>%
+  filter(name != 'COHY', name != 'COPE', name != 'Cpersonatus_COI', name != 'Chylalinus_COI') %>% 
+  mutate(name = str_replace(name, 'Cope_93_@6/14/2019,_5_00_PM', 'COPE_0093')) %>%
+  mutate(name = str_replace(name, 'COPE_', 'COPE-'),
+         name = str_replace(name, '-Fish', '_Fish')) %>%
+  separate(name, into = c('ID'), sep = '_', extra = 'drop') %>% 
+  mutate(ID = str_replace(ID, 'COPE-', 'COPE_')) %>%
+  separate(ID, into = c('extra', 'ID'), sep = '-', fill = 'left') %>%
+  dplyr::select(-extra) %>%
+  mutate(ID = str_replace(ID, 'COPE_', 'COPE-')) %>%
+  mutate(sequence = str_to_upper(sequence)) %>%
+  group_by(ID, sequence) %>%
+  summarise()
+
+post_sequencher_fasta_v3 <- read.fasta('../Data/Gobies_09.11.19.TXT', as.string = TRUE) %>%
+  unlist %>%
+  enframe() %>%
+  dplyr::rename(sequence = value) %>%
+  filter(name != 'COHY', name != 'COPE', name != 'Cpersonatus_COI', name != 'Chylalinus_COI') %>%
+  mutate(name = str_replace(name, 'COPE_', 'COPE-'),
+         name = str_replace(name, '-Fish', '_Fish')) %>% 
+  separate(name, into = c('ID'), sep = '_', extra = 'drop') %>% 
+  mutate(ID = str_replace(ID, 'COPE-', 'COPE_')) %>%
+  separate(ID, into = c('extra', 'ID'), sep = '-', fill = 'left') %>%
+  dplyr::select(-extra) %>%
+  mutate(ID = str_replace(ID, 'COPE_', 'COPE-')) %>%
+  mutate(sequence = str_to_upper(sequence)) %>%
+  group_by(ID, sequence) %>%
+  summarise()
+
+post_sequencher_fasta_v4 <- read.fasta('../Data/11.06.19.TXT', as.string = TRUE) %>%
+  unlist %>%
+  enframe() %>%
+  dplyr::rename(sequence = value) %>%
+  filter(name != 'COHY', name != 'COPE', name != 'Cpersonatus_COI', name != 'Chylalinus_COI') %>%
+  mutate(name = str_replace(name, 'COPE_', 'COPE-'),
+         name = str_replace(name, '-Fish', '_Fish')) %>% 
+  separate(name, into = c('ID'), sep = '_', extra = 'drop') %>% 
+  mutate(ID = str_replace(ID, 'COPE-', 'COPE_')) %>%
+  separate(ID, into = c('extra', 'ID'), sep = '-', fill = 'left') %>%
+  dplyr::select(-extra) %>%
+  mutate(ID = str_replace(ID, 'COPE_', 'COPE-')) %>%
+  mutate(sequence = str_to_upper(sequence)) %>%
+  group_by(ID, sequence) %>%
+  summarise()
+
+
+post_sequencher_fasta <- bind_rows(post_sequencher_fasta, post_sequencher_fasta_v2, 
+                                   post_sequencher_fasta_v3, post_sequencher_fasta_v4) %>%
+  mutate(length = str_length(sequence),
+         number_dash = str_count(sequence, '-')) %>%
+  distinct %>%
+  nest(data = c(sequence, length, number_dash)) %>%
+  mutate(n_seq = map_int(data, nrow)) %>%
+  mutate(sequence = map_chr(data, get_consensus)) %>%
+  select(ID, sequence)
+
 
 #### Read in microsat data ####
 microsats_raw <- read_csv('../Data/Microsat.csv') %>% 
@@ -136,7 +210,11 @@ full_cope_data <- microsats_raw %>%
   left_join(shoal_locations) %>%
   mutate(shoal = LETTERS[as.integer(as.factor(cloud))]) %>%
   dplyr::rename(shoal_size = number) %>%
-  dplyr::select(ID, site, shoal, shoal_size, X, Y, sl_mm, sequence, COPE5:CPER188) 
+  dplyr::select(ID, site, shoal, shoal_size, X, Y, sl_mm, sequence, COPE5:CPER188) %>%
+  
+  #Remove if I don't have COI sequence data
+  filter(!is.na(sequence))
+  
 
 full_cope_data %>%
   group_by(ID) %>%
@@ -189,7 +267,7 @@ aligned_sequence <- NCBI_sequence_data %>%
 ## Based on only the NCBI fastas
 per_position_base <- aligned_sequence %>%
   mutate(bases = str_split(aligned, '')) %>%
-  unnest %>%
+  unnest(bases) %>%
   dplyr::select(-aligned) %>%
   group_by(ID) %>%
   mutate(position = 1:n()) %>%
@@ -252,7 +330,8 @@ identification_probability <- per_position_base %>%
 full_cope_data <- full_cope_data %>%
   left_join(identification_probability %>%
               dplyr::select(ID, co1_species)) %>%
-  mutate(co1_species = if_else(is.na(co1_species), 'unknown', co1_species))
+  mutate(co1_species = if_else(is.na(co1_species), 'unknown', co1_species)) %>%
+  filter(co1_species == 'chya')
 
 #### Observed Heterozygosity ####
 microsats_species_split <- full_cope_data %>%
@@ -277,207 +356,8 @@ full_cope_data %>%
 full_cope_data <- full_cope_data %>%
   select(-contains('CPER52'),-contains('COPE10'))
 
-
-#### Assign species based on microsats ####
-microsats_apriori <- full_cope_data %>%
-  filter(!is.na(COPE5)) %>%
-  dplyr::select(ID, COPE5:CPER188) %$%
-  df2genind(.[,c(-1)],sep='/',ind.names=ID, NA.char = NA,type='codom')
-
-grp_all <- find.clusters(microsats_apriori, max.n.clust=40, n.pca = 200, method = 'ward')
-dapc_all <- dapc(microsats_apriori, grp_all$grp, n.pca = 60, n.da = length(unique(grp_all$grp))-1)
-opimized_a <- optim.a.score(dapc_all)
-dapc_all_optim <- dapc(microsats_apriori, grp_all$grp, n.pca = opimized_a$best, n.da = length(unique(grp_all$grp))-1)
-#scatter(dapc_all_optim)
-
-full_cope_data <- full_cope_data %>%
-  left_join(grp_all$grp %>%
-              enframe %>%
-              dplyr::rename(ID = name, microsat_group_all = value) %>%
-              mutate(microsat_group_all = as.character(microsat_group_all))) %>%
-  left_join(dapc_all_optim$ind.coord %>%
-              as_tibble(rownames = 'ID')) %>%
-  rename_at(vars(contains('LD')), list(~str_c('ind', ., 'all', sep = '_'))) %>%
-  left_join(dapc_all_optim$tab %>%
-              as_tibble(rownames = 'ID') %>%
-              clean_names,
-            by = c('ID' = 'id')) %>%
-  rename_at(vars(starts_with('pca')), list(~str_c('ind', ., 'all', sep = '_'))) %>%
-  left_join(dapc_all_optim$grp.coord %>%
-              as_tibble(rownames = 'microsat_group_all')) %>%
-  rename_at(vars(starts_with('LD')), list(~str_c('grp', ., 'all', sep = '_'))) 
-
-full_cope_data %>%
-  filter(!is.na(microsat_group_all)) %>%
-  ggplot(aes(x = ind_LD1_all, y = ind_LD2_all)) +
-  #geom_path(data = ellipses, aes(group = microsat_group_all), colour = 'grey40') +
-  geom_segment(aes(xend = grp_LD1_all, yend = grp_LD2_all), colour = 'grey40') +
-  #geom_segment(data = spanning_tree, aes(x = x0, y = y0, xend = x1, yend = y1), colour = 'grey40', size = 4) +
-  #geom_point(aes(x = grp_LD1_all, y = grp_LD2_all), size = 5, shape = 15, colour = 'grey40') + 
-  geom_point(aes(colour = co1_species), size = 3) +
-  
-  scale_color_manual(values = c('cpers'='#F8766D', 'chya'='#00BFC4', 'unknown'='black')) +
-  theme_void() +
-  theme(panel.background = element_rect(fill = "transparent", colour = NA), 
-        panel.border = element_rect(fill = NA, colour = 'black'), 
-        plot.background = element_rect(size = 1, linetype = 'solid', colour = 'black', fill = "transparent"),
-        legend.position='none')
-
-
-full_cope_data %>%
-  filter(!is.na(microsat_group_all)) %>%
-  filter(co1_species != 'unknown') %>%
-  group_by(co1_species, microsat_group_all) %>%
-  summarise()
-
-full_cope_data %>%
-  filter(co1_species == 'cpers') %>%
-  filter(microsat_group_all != '1') %$% ID
-#Cpers - group 1 & "COPE-0144" "COPE-0156"
-#
-full_cope_data <- full_cope_data %>%
-  mutate(microsat_species = case_when(microsat_group_all != 1 & ID != 'COPE-0144' & ID != 'COPE-0156' ~ 'chya',
-                                      microsat_group_all == 1 | ID == 'COPE-0144' | ID == 'COPE-0156' ~ 'cpers',
-                                      TRUE ~ NA_character_))
-
-#
-#### Microsat allele frequency distributions between species ####
-species_ID_microsats <- full_cope_data %>%
-  dplyr::select(ID, microsat_species, COPE5:CPER188) %>% 
-  filter(!is.na(COPE5)) %$%
-  df2genind(.[,c(-1:-2)],sep='/',ind.names=ID,pop=microsat_species,NA.char =NA,type='codom') 
-
-frequency_dist <- species_ID_microsats %>%
-  genind2genpop() %>%
-  makefreq() %>%
-  as_tibble(rownames = 'species') %>%
-  gather(loci.allele, frequency, -species) %>%
-  separate(loci.allele, into = c('locus', 'allele')) %>%
-  mutate(allele = as.integer(allele)) 
-
-frequency_dist %>%
-  ggplot(aes(x = allele, y = frequency, colour = species)) +
-  geom_line() +
-  geom_point() +
-  facet_wrap(~locus, scales = 'free') +
-  scale_color_manual(values = c('cpers'='#F8766D', 'chya'='#00BFC4', 'unknown'='black')) +
-  theme_classic()
-
-species_ID_microsats %>%
-  genind2genpop() %@%
-  'tab' %>%
-  as_tibble(rownames = 'species') %>%
-  gather(loci.allele, count, -species) %>%
-  separate(loci.allele, into = c('locus', 'allele')) %>%
-  mutate(allele = as.integer(allele)) %>%
-  
-  filter(species != 'Unidentified') %>%
-  group_by(locus, allele) %>%
-  filter(sum(count) != 0) %>%
-  
-  group_by(locus) %>%
-  nest %>%
-  mutate(fisher_p = map_dbl(data, ~.x %>%
-                              spread(allele, count) %>%
-                              dplyr::select(-species) %>%
-                              fisher.test(simulate.p.value = TRUE) %>% 
-                              tidy %$%
-                              p.value)) %>%
-  mutate(fisher_p.adj = p.adjust(fisher_p, 'holm')) %>%
-  mutate(species_difference = fisher_p.adj < 0.05)
-
-#### Add back in loci with missing data to see if they still need to be removed ####
-full_cope_data %>%
-  filter(microsat_species == 'chya') %>%
-  left_join(microsats_raw %>%
-              dplyr::select(ID, COPE10, CPER52)) %>%
-  summarise_at(vars(COPE5:CPER188, COPE10, CPER52), ~sum(str_detect(., 'NA/NA'))/length(.))
-
-#### DAPC with only the C. hyalinus ####
-only_chya <- full_cope_data %>%
-  filter(microsat_species == 'chya') %>%
-  dplyr::select(ID, COPE5:CPER188) %$% 
-  df2genind(.[,c(-1,-2)],sep='/',ind.names=ID,NA.char =NA,type='codom')
-
-grp_chya <- find.clusters(only_chya, max.n.clust=40, n.pca = 200, method = 'ward')
-dapc_chya <- dapc(only_chya, grp_chya$grp, n.pca = 60, n.da = length(unique(grp_chya$grp))-1)
-optim.a.score(dapc_chya)
-dapc_chya_optim <- dapc(only_chya, grp_chya$grp, n.pca = 19, n.da = length(unique(grp_chya$grp))-1)
-#scatter(dapc_chya_optim)
-
-full_cope_data <- full_cope_data %>%
-  left_join(grp_chya$grp %>%
-              enframe %>%
-              dplyr::rename(ID = name, microsat_group_chya = value) %>%
-              mutate(microsat_group_chya = as.character(microsat_group_chya))) %>%
-  left_join(dapc_chya_optim$ind.coord %>%
-              as_tibble(rownames = 'ID')) %>%
-  rename_at(vars(starts_with('LD')), list(~str_c('ind', ., 'chya', sep = '_'))) %>%
-  left_join(dapc_chya_optim$tab %>%
-              as_tibble(rownames = 'ID') %>%
-              clean_names,
-            by = c('ID' = 'id')) %>%
-  rename_at(vars(starts_with('pca')), list(~str_c('ind', ., 'chya', sep = '_'))) %>%
-  left_join(dapc_chya_optim$grp.coord %>%
-              as_tibble(rownames = 'microsat_group_chya')) %>%
-  rename_at(vars(starts_with('LD')), list(~str_c('grp', ., 'chya', sep = '_'))) 
-
-
-ellipses <- full_cope_data %>%
-  filter(!is.na(microsat_group_chya)) %>%
-  dplyr::select(microsat_group_chya, ind_LD1_chya, ind_LD2_chya) %>%
-  nest(-microsat_group_chya) %>%
-  mutate(tmp = map_int(data, nrow)) %>%
-  filter(tmp > 2) %>%
-  mutate(ellipse = map(data, function(x) x %>%
-                         dplyr::select(contains('LD')) %>%
-                         cov.wt(.,wt=rep(1/nrow(.),nrow(.))) %$%
-                         CovEllipse(cov=cov,
-                                    center=center))) %>%
-  dplyr::select(microsat_group_chya, ellipse) %>%
-  unnest
-
-spanning_tree <- full_cope_data %>%
-  filter(!is.na(microsat_group_chya)) %>%
-  mutate(microsat_group_chya = as.integer(microsat_group_chya)) %>%
-  group_by(microsat_group_chya) %>%
-  dplyr::select(contains('_chya')) %>%
-  summarise_at(vars(contains('pca')), mean) %$%
-  as.matrix(.[,-1]) %>%
-  dist %>%
-  raise_to_power(2) %>%
-  mstree %>%
-  
-  tibble(x0 = dapc_chya_optim$grp.coord[.[,1], 1],
-         y0 = dapc_chya_optim$grp.coord[.[,1], 2],
-         x1 = dapc_chya_optim$grp.coord[.[,2], 1],
-         y1 = dapc_chya_optim$grp.coord[.[,2], 2]) %>%
-  dplyr::select(-1)
-
-
-dapc_chya_optim$eig %>%
-  tibble(value = 1:length(.), eigen = .) %>%
-  mutate(top = value <= 2) %>%
-  ggplot(aes(x = value, y = eigen, fill = top)) +
-  geom_col(colour = 'black', show.legend = FALSE) +
-  scale_fill_manual(values = c('TRUE' = 'black', 'FALSE' = 'grey80')) +
-  theme_classic()
-
-full_cope_data %>%
-  filter(!is.na(microsat_group_chya)) %>%
-  ggplot(aes(x = ind_LD1_chya, y = ind_LD2_chya)) +
-  geom_path(data = ellipses, aes(group = microsat_group_chya), colour = 'grey40') +
-  geom_segment(aes(xend = grp_LD1_chya, yend = grp_LD2_chya), colour = 'grey40') +
-  geom_segment(data = spanning_tree, aes(x = x0, y = y0, xend = x1, yend = y1), colour = 'grey40', size = 4) +
-  geom_point(aes(x = grp_LD1_chya, y = grp_LD2_chya), size = 10, shape = 15, colour = 'grey40') + 
-  geom_point(aes(colour = microsat_group_chya)) +
-  
-  #scale_color_manual(values = c('cpers'='#F8766D', 'chya'='#00BFC4', 'unknown'='black')) +
-  theme_void()
-
-#### Relatedness within Chya ####
+#### Simulate relatives to determine best relatedness measure to use ####
 sim_rel <- full_cope_data %>%
-  filter(microsat_species == 'chya') %>%
   dplyr::select(ID, COPE5:CPER188) %>%
   separate(COPE5, into = c('COPE5.a', 'COPE5.b')) %>%
   separate(COPE9, into = c('COPE9.a', 'COPE9.b')) %>%
@@ -488,7 +368,7 @@ sim_rel <- full_cope_data %>%
   separate(CPER188, into = c('CPER188.a', 'CPER188.b')) %>%
   readgenotypedata(.) %$%
   familysim(freqs,500) %>%
-  coancestry(.,error.rates = 0.01,allow.inbreeding=T,
+  coancestry(.,error.rates = 0.01, allow.inbreeding=T,
              trioml=1,wang=1,lynchli=1,lynchrd=1,ritland=1,quellergt = 1,dyadml = 1,
              trioml.num.reference=150, rng.seed = 12345) %$%
   cleanuprvals(relatedness,500) %>%
@@ -512,6 +392,17 @@ sim_rel <- full_cope_data %>%
 write_csv(sim_rel, '../../Results_tmp/simulated_relatedness.csv')
 #sim_rel <- read_csv('../../Results_tmp/simulated_relatedness.csv')
 
+sim_rel %>%
+  group_by(metric,group) %>% 
+  mutate(M=mean(relatedness),S=sd(relatedness),CV=S/M) %>%
+  ungroup %>%
+  group_by(metric) %>%
+  mutate(mean_cv=mean(CV),w=cor(true_r,relatedness)) %>%
+  select(metric,mean_cv,w,group,M,S,CV) %>%
+  distinct() %>%
+  arrange(-w) %T>%
+  write_csv('../Figures/Table 2.csv')
+
 ## Need to put back the analysis here to figure out best choice ##
 
 max_unrel <- sim_rel %>%
@@ -525,7 +416,6 @@ N<-3
 plan(multicore)
 
 probability_exclustion <- full_cope_data %>%
-  filter(microsat_species == 'chya') %>%
   dplyr::select(ID, COPE5:CPER188) %$%
   df2genind(.[,c(-1)],sep='/',ind.names=ID, NA.char = NA,type='codom') %>%
   
@@ -607,7 +497,6 @@ probability_exclustion %$% #%>% filter(loci != 'COPE5')
 
 #### KinInfor data prep ####
 full_cope_data %>% 
-  filter(microsat_species == 'chya') %>%
   dplyr::select(ID, COPE5:CPER188) %$%
   df2genind(.[,c(-1)],sep='/',ind.names=ID, NA.char = NA,type='codom') %>%
   
@@ -627,7 +516,6 @@ full_cope_data %>%
 
 #### Pairwise Relatedness ####
 pairwise_related <- full_cope_data %>% 
-  filter(microsat_species == 'chya') %>%
   dplyr::select(ID, COPE5:CPER188) %>%
   
   #slice(sample(nrow(.),5)) %>% #Shrink for testing code
@@ -675,6 +563,9 @@ pairwise_related <- full_cope_data %>%
 write_csv(pairwise_related, '../../Results_tmp/pairwise_relatedness.csv')
 #pairwise_related <- read_csv('../../Results_tmp/pairwise_relatedness.csv')
   
+pairwise_related %>%
+  filter(dyadml.low > 0)
+
 
 #### Marker power relatedness analysis ####
 
@@ -979,17 +870,6 @@ ggsave(filename = '../Figures/Figure 1.tiff',plot = print(fig1),scale=1.5,height
 
 
 ## Figure 2 & Table 2 ##
-sim_rel %>%
-  group_by(metric,group) %>% 
-  mutate(M=mean(relatedness),S=sd(relatedness),CV=S/M) %>%
-  ungroup %>%
-  group_by(metric) %>%
-  mutate(mean_cv=mean(CV),w=cor(true_r,relatedness)) %>%
-  select(metric,mean_cv,w,group,M,S,CV) %>%
-  distinct() %>%
-  arrange(-w) %T>%
-  write_csv('../Figures/Table 2.csv')
-
 fig2<-sim_rel %>%
   group_by(metric,group) %>%
   summarise(mean_r=mean(relatedness),median_r=median(relatedness),

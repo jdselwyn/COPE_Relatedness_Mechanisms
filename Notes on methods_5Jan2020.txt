@@ -1,0 +1,11 @@
+#Done
+1) Remove all individuals without a sequence (46)
+2) Remove all COPE (49)
+3) Left with CHYA (289)
+4) Updated table 1 with new allele info
+5) 
+
+#Need to do
+1) The rest of the analysis script
+2) Sort out D'Aloia analysis about how relatedness is affected by number of shared loci
+3) 
